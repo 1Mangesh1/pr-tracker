@@ -1,10 +1,42 @@
-# Environment and config files
+# Environment and secrets
 .env
+.env.local
+.env.*.local
 env.js
 
 # API Keys and sensitive data
 *.key
 *.secret
+.wrangler/secrets/
+
+# Build outputs
+dist/
+build/
+*.d.ts
+*.d.ts.map
+*.js.map
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Wrangler & Cloudflare
+.wrangler/
+wrangler-account.json
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.sublime-workspace
+.DS_Store
 
 # OS generated files
 .DS_Store
@@ -14,17 +46,34 @@ env.js
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
+desktop.ini
 
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Dependencies (if you add any)
-node_modules/
-package-lock.json
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+
+# Local development
+.venv/
+venv/
+
+# macOS
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
