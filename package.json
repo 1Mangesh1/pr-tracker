@@ -1,0 +1,32 @@
+{
+  "name": "pr-tracker",
+  "version": "1.0.0",
+  "description": "GitHub PR Tracker & AI Summarizer with Cloudflare Workers",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "github",
+    "pr",
+    "tracker",
+    "cloudflare",
+    "workers",
+    "ai"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "wrangler": "latest"
+  },
+  "dependencies": {
+    "itty-router": "^5.0.0"
+  }
+}

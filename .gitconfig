@@ -1,0 +1,52 @@
+# Git Configuration for PR Tracker
+# =================================
+
+[core]
+	excludesfile = ~/.gitignore_global
+	autocrlf = input
+
+[user]
+	name = Mangesh Bide
+	email = 1mangesh1@gmail.com
+
+[github]
+	user = 1Mangesh1
+
+[push]
+	default = simple
+	autoSetupRemote = true
+
+[pull]
+	rebase = true
+
+[fetch]
+	prune = true
+
+[merge]
+	conflictstyle = diff3
+
+[color]
+	ui = auto
+
+[alias]
+	st = status
+	co = checkout
+	br = branch
+	ci = commit
+	unstage = reset HEAD --
+	last = log -1 HEAD
+	visual = log --graph --oneline --all
+	contributors = shortlog --summary --numbered
+	amend = commit --amend --no-edit
+
+[init]
+	defaultBranch = main
+
+[status]
+	showStash = true
+
+[commit]
+	gpgsign = false
+
+[diff]
+	colorMoved = zebra

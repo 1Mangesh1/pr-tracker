@@ -1,0 +1,22 @@
+name = "pr-tracker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+name = "pr-tracker"
+route = "https://pr-tracker.mangesh.dev/*"
+
+[ai]
+binding = "AI"
+
+[assets]
+directory = "public"
+
+[vars]
+RATE_LIMIT_DELAY = "500"
+MAX_CONCURRENT_SUMMARIZATIONS = "1"
+CACHE_TTL_HOURS = "24"
+
+[observability]
+enabled = true

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GitHub PR Tracker & AI Summarizer</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <div class="header-content">
+          <div class="logo">
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M11 6H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"
+              ></path>
+              <path
+                d="M18.5 3.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+              ></path>
+            </svg>
+            <h1>PR Tracker</h1>
+          </div>
+          <p class="subtitle">GitHub PR Tracker & AI Summarizer</p>
+        </div>
+      </header>
+
+      <main class="main-content">
+        <!-- Search Section -->
+        <section class="search-section">
+          <div class="search-card">
+            <h2>Find PRs</h2>
+
+            <div class="input-group">
+              <label for="searchQuery">GitHub Search Query</label>
+              <input
+                type="text"
+                id="searchQuery"
+                placeholder="e.g., is:pr author:1Mangesh1"
+                class="full-width"
+              />
+              <p class="help-text">
+                Use GitHub search syntax:
+                <code>is:pr</code> <code>is:merged</code> <code>is:open</code>
+                <code>author:username</code> <code>repo:owner/name</code>
+              </p>
+            </div>
+
+            <div class="input-row">
+              <div class="input-group">
+                <label for="startDate">Start Date (Appraisal Period)</label>
+                <input type="date" id="startDate" />
+              </div>
+              <div class="input-group">
+                <label for="endDate">End Date</label>
+                <input type="date" id="endDate" />
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label for="maxResults">Max Results</label>
+              <input
+                type="number"
+                id="maxResults"
+                value="50"
+                min="1"
+                max="500"
+              />
+            </div>
+
+            <div class="quick-queries">
+              <p class="quick-queries-label">Quick Examples:</p>
+              <button class="btn-secondary btn-sm" data-query="is:pr author:1Mangesh1 sort:created-desc">
+                My Recent PRs
+              </button>
+              <button class="btn-secondary btn-sm" data-query="is:pr is:merged author:1Mangesh1 sort:created-desc">
+                My Merged PRs
+              </button>
+              <button class="btn-secondary btn-sm" data-query="is:pr repo:YourOrg/YourRepo sort:created-desc">
+                Repo PRs
+              </button>
+            </div>
+
+            <button id="fetchBtn" class="btn-primary full-width">
+              <span class="btn-text">Fetch & Summarize</span>
+              <span class="btn-spinner hidden"></span>
+            </button>
+          </div>
+        </section>
+
+        <!-- Stats Dashboard -->
+        <section id="statsSection" class="stats-section hidden">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-value" id="totalPRs">0</div>
+              <div class="stat-label">Total PRs</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="statMerged">0</div>
+              <div class="stat-label">Merged</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="statOpen">0</div>
+              <div class="stat-label">Open</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="statClosed">0</div>
+              <div class="stat-label">Closed</div>
+            </div>
+          </div>
+
+          <div class="stats-chart-section">
+            <h3>PRs by Domain</h3>
+            <div class="domain-chart" id="domainChart"></div>
+          </div>
+
+          <div class="stats-chart-section">
+            <h3>Top Technologies</h3>
+            <div class="tech-tags" id="techTags"></div>
+          </div>
+
+          <div class="button-group">
+            <button id="generateReportBtn" class="btn-secondary">
+              📋 Generate Report
+            </button>
+            <button id="exportCSVBtn" class="btn-secondary">
+              📥 Export CSV
+            </button>
+          </div>
+        </section>
+
+        <!-- Filters Section -->
+        <section id="filtersSection" class="filters-section hidden">
+          <h2>Filters</h2>
+          <div class="filter-group">
+            <label>Domain</label>
+            <div class="filter-chips">
+              <button class="chip" data-filter="domain" value="">All</button>
+              <button class="chip" data-filter="domain" value="Backend">
+                Backend
+              </button>
+              <button class="chip" data-filter="domain" value="Frontend">
+                Frontend
+              </button>
+              <button class="chip" data-filter="domain" value="DevOps">
+                DevOps
+              </button>
+              <button class="chip" data-filter="domain" value="Infra">Infra</button>
+              <button class="chip" data-filter="domain" value="Fullstack">
+                Fullstack
+              </button>
+              <button class="chip" data-filter="domain" value="Testing">
+                Testing
+              </button>
+              <button class="chip" data-filter="domain" value="Docs">Docs</button>
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <label>Status</label>
+            <div class="filter-chips">
+              <button class="chip active" data-filter="status" value="">All</button>
+              <button class="chip" data-filter="status" value="merged">
+                Merged
+              </button>
+              <button class="chip" data-filter="status" value="open">Open</button>
+              <button class="chip" data-filter="status" value="closed">
+                Closed
+              </button>
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <label for="repoFilter">Repository</label>
+            <input
+              type="text"
+              id="repoFilter"
+              placeholder="Filter by repo name..."
+              class="full-width"
+            />
+          </div>
+        </section>
+
+        <!-- Results Section -->
+        <section id="resultsSection" class="results-section hidden">
+          <div class="loading-state hidden" id="loadingState">
+            <div class="spinner"></div>
+            <p id="loadingText">Processing...</p>
+          </div>
+
+          <div class="results-container" id="resultsContainer"></div>
+
+          <div class="empty-state hidden" id="emptyState">
+            <p>No PRs found. Try adjusting your search criteria.</p>
+          </div>
+
+          <div class="error-state hidden" id="errorState">
+            <p id="errorMessage"></p>
+            <button class="btn-secondary" onclick="document.getElementById('errorState').classList.add('hidden')">
+              Dismiss
+            </button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Report Modal -->
+    <div class="modal hidden" id="reportModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Appraisal Report</h2>
+          <button class="modal-close" onclick="closeReportModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <textarea id="reportText" readonly class="full-width report-textarea"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="copyReportToClipboard()">
+            📋 Copy to Clipboard
+          </button>
+          <button class="btn-secondary" onclick="downloadReport()">
+            📥 Download as Markdown
+          </button>
+          <button class="btn-secondary" onclick="closeReportModal()">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

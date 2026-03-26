@@ -1,0 +1,30 @@
+# Environment and config files
+.env
+env.js
+
+# API Keys and sensitive data
+*.key
+*.secret
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Dependencies (if you add any)
+node_modules/
+package-lock.json
