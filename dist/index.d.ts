@@ -6,13 +6,9 @@ interface Ai {
         response: string;
     } | string>;
 }
-interface AssetContainer {
-    fetch(req: Request): Promise<Response>;
-}
 interface Env {
     GITHUB_TOKEN: string;
     AI: Ai;
-    ASSETS: AssetContainer;
     RATE_LIMIT_DELAY?: string;
     MAX_CONCURRENT_SUMMARIZATIONS?: string;
     CACHE_TTL_HOURS?: string;
