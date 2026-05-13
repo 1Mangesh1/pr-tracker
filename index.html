@@ -16,47 +16,21 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f3ebd9'/%3E%3Ctext x='50%25' y='62%25' font-family='Georgia,serif' font-size='22' font-weight='900' text-anchor='middle' fill='%23232018'%3ED%3C/text%3E%3C/svg%3E" />
 </head>
 <body>
-  <div class="paper-grain" aria-hidden="true"></div>
-
   <main id="app" class="page">
-    <header class="masthead">
-      <div class="mast-bar" role="presentation">
-        <span class="mast-bar-l" id="mastDate">—</span>
-        <span class="mast-bar-c">
-          Vol. <span id="mastVol">I</span> · Issue <span id="mastIssue">№ 001</span>
-        </span>
-        <span class="mast-bar-r" id="mastUser">unregistered correspondent</span>
-      </div>
-
-      <div class="mast-rule mast-rule--double"></div>
-
-      <h1 class="mast-title">
-        <span class="mast-title-main">Dispatch</span><span class="mast-title-dot">.</span>
-      </h1>
-
-      <p class="mast-sub">
-        <em>A field log of pull requests</em> — refreshed by hand, sorted by your eye,
-        served from this browser tab and nothing else.
-      </p>
-
-      <div class="mast-rule"></div>
+    <header class="bar">
+      <a class="brand" href="./" aria-label="Dispatch home">
+        <span>Dispatch</span><span class="brand-dot">.</span>
+      </a>
+      <div class="bar-right" id="barRight"></div>
     </header>
 
     <section class="console" id="console" aria-label="Controls"></section>
 
-    <section class="report" id="report" aria-live="polite" aria-busy="false"></section>
+    <section class="report" id="report" aria-live="polite"></section>
 
-    <footer class="colophon">
-      <div class="colophon-rule"></div>
-      <div class="colophon-row">
-        <span class="colophon-mark">·</span>
-        <span>Set in <em>Fraunces</em>, <em>Newsreader</em> &amp; <em>JetBrains Mono</em>.</span>
-        <span class="colophon-mark">·</span>
-        <span>No servers. No AI. No telemetry. Your token never leaves this tab.</span>
-        <span class="colophon-mark">·</span>
-        <span id="colophonRate">—</span>
-        <span class="colophon-mark">·</span>
-      </div>
+    <footer class="foot">
+      <span>No servers. No AI. Token stays in this tab.</span>
+      <span id="footRate">—</span>
     </footer>
   </main>
 

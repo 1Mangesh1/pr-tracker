@@ -1,24 +1,23 @@
 /* ============================================================
-   Dispatch — PR tracker
-   Pure browser. Talks to GitHub REST. No backend.
+   Dispatch — PR tracker (browser-only, GitHub REST)
    ============================================================ */
 
 const STORE = {
-  pat:     'dispatch.pat',
-  orgs:    'dispatch.orgs',
-  range:   'dispatch.range',
-  status:  'dispatch.status',
-  groupBy: 'dispatch.groupBy',
-  issue:   'dispatch.issueNo',
+  pat:      'dispatch.pat',
+  orgs:     'dispatch.orgs',
+  from:     'dispatch.from',
+  to:       'dispatch.to',
+  status:   'dispatch.status',
+  scope:    'dispatch.scope',
 };
 
-const RANGES = [
-  { id: '1',   label: '24 h' },
-  { id: '3',   label: '3 d' },
-  { id: '7',   label: '7 d' },
-  { id: '14',  label: '14 d' },
-  { id: '30',  label: '30 d' },
-  { id: '90',  label: '90 d' },
+const PRESETS = [
+  { id: '1',    label: '24h' },
+  { id: '7',    label: '7d' },
+  { id: '30',   label: '30d' },
+  { id: '90',   label: '90d' },
+  { id: '365',  label: '1y' },
+  { id: 'all',  label: 'All time' },
 ];
 
 const STATUSES = [
@@ -28,24 +27,36 @@ const STATUSES = [
   { id: 'all',    label: 'All' },
 ];
 
+const SCOPES = [
+  { id: 'org',  label: 'All in orgs' },
+  { id: 'mine', label: 'Only mine' },
+];
+
+const EPOCH = '2008-01-01'; // GitHub's birth year
+
+/* ---------- state ---------------------------------------- */
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function daysAgoISO(n) { return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10); }
+
 const state = {
-  pat: localStorage.getItem(STORE.pat) || '',
-  user: null,
-  orgs: [],
+  pat:          localStorage.getItem(STORE.pat) || '',
+  user:         null,
+  orgs:         [],
   selectedOrgs: safeJSON(localStorage.getItem(STORE.orgs), []),
-  range: localStorage.getItem(STORE.range) || '7',
-  status: localStorage.getItem(STORE.status) || 'open',
-  groupBy: localStorage.getItem(STORE.groupBy) || 'org',
-  prs: [],
-  loading: false,
-  error: null,
-  rateLimit: null,
-  lastFetch: null,
+  from:         localStorage.getItem(STORE.from) || daysAgoISO(30),
+  to:           localStorage.getItem(STORE.to) || todayISO(),
+  status:       localStorage.getItem(STORE.status) || 'open',
+  scope:        localStorage.getItem(STORE.scope) || 'org',
+  prs:          [],
+  loading:      false,
+  error:        null,
+  rateLimit:    null,
+  lastFetch:    null,
 };
 
-/* ---------- helpers ------------------------------------- */
-function safeJSON(s, fallback) { try { return JSON.parse(s) ?? fallback; } catch { return fallback; } }
-const $ = (sel, root = document) => root.querySelector(sel);
+function safeJSON(s, fb) { try { return JSON.parse(s) ?? fb; } catch { return fb; } }
+
+const $ = (s, r = document) => r.querySelector(s);
 const el = (tag, attrs = {}, ...children) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -63,44 +74,30 @@ const el = (tag, attrs = {}, ...children) => {
   return n;
 };
 
-const fmtDate = (d) =>
-  d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const fmtAge = (iso) => {
   const ms = Date.now() - new Date(iso).getTime();
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.round(h / 24);
-  if (d < 30) return `${d}d`;
-  const mo = Math.round(d / 30);
-  if (mo < 12) return `${mo}mo`;
+  const m = Math.round(s / 60); if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60); if (h < 24) return `${h}h`;
+  const d = Math.round(h / 24); if (d < 30) return `${d}d`;
+  const mo = Math.round(d / 30); if (mo < 12) return `${mo}mo`;
   return `${Math.round(mo / 12)}y`;
-};
-const bumpIssue = () => {
-  const n = Number(localStorage.getItem(STORE.issue) || '0') + 1;
-  localStorage.setItem(STORE.issue, String(n));
-  return n;
 };
 
 /* ---------- GitHub API ---------------------------------- */
-async function gh(path, opts = {}) {
+async function gh(path) {
   const url = path.startsWith('http') ? path : `https://api.github.com${path}`;
   const r = await fetch(url, {
-    ...opts,
     headers: {
       Authorization: `Bearer ${state.pat}`,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
-      ...(opts.headers || {}),
     },
   });
   state.rateLimit = {
     remaining: r.headers.get('x-ratelimit-remaining'),
     limit:     r.headers.get('x-ratelimit-limit'),
-    reset:     r.headers.get('x-ratelimit-reset'),
   };
   if (!r.ok) {
     let detail = '';
@@ -116,21 +113,20 @@ async function fetchUserAndOrgs() {
   state.orgs = orgs;
 }
 
-function buildSearchQuery(org) {
-  const days = Number(state.range);
-  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
-  const parts = [`org:${org}`, 'is:pr', `updated:>=${since}`];
+function buildQuery(org) {
+  const from = state.from || EPOCH;
+  const to = state.to || todayISO();
+  const parts = [`org:${org}`, 'is:pr', `updated:${from}..${to}`];
   if (state.status === 'open')   parts.push('is:open');
   if (state.status === 'merged') parts.push('is:merged');
   if (state.status === 'closed') parts.push('is:closed', '-is:merged');
+  if (state.scope === 'mine' && state.user) parts.push(`author:${state.user.login}`);
   return parts.join(' ');
 }
 
 async function fetchPRsForOrg(org) {
-  const q = buildSearchQuery(org);
-  const data = await gh(
-    `/search/issues?q=${encodeURIComponent(q)}&sort=updated&order=desc&per_page=100`
-  );
+  const q = buildQuery(org);
+  const data = await gh(`/search/issues?q=${encodeURIComponent(q)}&sort=updated&order=desc&per_page=100`);
   return (data.items || []).map((i) => ({
     org,
     id: i.id,
@@ -140,7 +136,6 @@ async function fetchPRsForOrg(org) {
     draft: !!i.draft,
     merged: !!i.pull_request?.merged_at,
     closed: i.state === 'closed',
-    state: i.state,
     author: i.user,
     labels: i.labels || [],
     comments: i.comments,
@@ -157,9 +152,9 @@ async function fetchAllPRs() {
   try {
     const targets = state.selectedOrgs.length ? state.selectedOrgs : state.orgs.map((o) => o.login);
     if (!targets.length) { state.prs = []; return; }
-    const results = await Promise.all(targets.map((o) => fetchPRsForOrg(o).catch((e) => {
-      console.error(`org ${o} failed:`, e); return [];
-    })));
+    const results = await Promise.all(targets.map((o) =>
+      fetchPRsForOrg(o).catch((e) => { console.error(`org ${o}:`, e); return []; })
+    ));
     state.prs = results.flat().sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
     state.lastFetch = new Date();
   } catch (e) {
@@ -174,9 +169,10 @@ async function fetchAllPRs() {
 function persist() {
   if (state.pat) localStorage.setItem(STORE.pat, state.pat); else localStorage.removeItem(STORE.pat);
   localStorage.setItem(STORE.orgs,   JSON.stringify(state.selectedOrgs));
-  localStorage.setItem(STORE.range,  state.range);
+  localStorage.setItem(STORE.from,   state.from);
+  localStorage.setItem(STORE.to,     state.to);
   localStorage.setItem(STORE.status, state.status);
-  localStorage.setItem(STORE.groupBy, state.groupBy);
+  localStorage.setItem(STORE.scope,  state.scope);
 }
 
 function signOut() {
@@ -187,118 +183,165 @@ function signOut() {
   render();
 }
 
-/* ---------- rendering: masthead ------------------------- */
-function renderMasthead() {
-  $('#mastDate').textContent = fmtDate(new Date());
-  const issue = Number(localStorage.getItem(STORE.issue) || '1');
-  $('#mastIssue').textContent = `№ ${String(issue).padStart(3, '0')}`;
-  $('#mastUser').textContent = state.user
-    ? `filed by @${state.user.login}`
-    : 'unregistered correspondent';
-
-  const rate = state.rateLimit;
-  $('#colophonRate').textContent = rate
-    ? `Rate · ${rate.remaining}/${rate.limit} remaining`
-    : 'Rate · —';
+/* ---------- preset chips -------------------------------- */
+function presetActiveId() {
+  if (state.to !== todayISO()) return null;
+  if (state.from === EPOCH) return 'all';
+  for (const p of PRESETS) {
+    if (p.id === 'all') continue;
+    if (state.from === daysAgoISO(Number(p.id))) return p.id;
+  }
+  return null;
+}
+function applyPreset(id) {
+  state.to = todayISO();
+  state.from = id === 'all' ? EPOCH : daysAgoISO(Number(id));
+  persist(); fetchAllPRs();
 }
 
-/* ---------- rendering: console (gate or toolbar) ------- */
-function renderConsole() {
-  const console_ = $('#console');
-  console_.innerHTML = '';
+/* ---------- export ------------------------------------- */
+function exportMarkdown() {
+  const fmt = (d) => d ? new Date(d).toISOString().slice(0, 10) : '';
+  const lines = [];
+  const scope = state.scope === 'mine' ? `@${state.user?.login}` : 'all';
+  lines.push(`# Dispatch — pull requests (${scope})`);
+  lines.push('');
+  lines.push(`_Window:_ \`${state.from} → ${state.to}\`  ·  _State:_ \`${state.status}\`  ·  _Generated:_ \`${new Date().toISOString()}\``);
+  lines.push('');
+  lines.push(`Total: **${state.prs.length}** pull request${state.prs.length === 1 ? '' : 's'}.`);
+  lines.push('');
 
-  if (!state.pat) {
-    console_.append(renderGate());
+  const groups = new Map();
+  for (const pr of state.prs) {
+    if (!groups.has(pr.org)) groups.set(pr.org, []);
+    groups.get(pr.org).push(pr);
+  }
+  const sorted = [...groups.keys()].sort((a, b) => groups.get(b).length - groups.get(a).length);
+
+  for (const org of sorted) {
+    const items = groups.get(org);
+    lines.push(`## ${org} _(${items.length})_`);
+    lines.push('');
+    for (const pr of items) {
+      const st = pr.merged ? 'merged' : pr.closed ? 'closed' : pr.draft ? 'draft' : 'open';
+      const head = `- [\`${st}\`] [${pr.repo}#${pr.number}](${pr.url}) — **${pr.title.replace(/\|/g, '\\|')}**`;
+      const body = `  · @${pr.author?.login ?? '?'} · updated ${fmt(pr.updatedAt)}` +
+                   (pr.mergedAt ? ` · merged ${fmt(pr.mergedAt)}` : '') +
+                   (pr.closedAt && !pr.mergedAt ? ` · closed ${fmt(pr.closedAt)}` : '');
+      lines.push(head);
+      lines.push(body);
+    }
+    lines.push('');
+  }
+
+  const md = lines.join('\n');
+  const filename = `dispatch-${state.scope === 'mine' ? (state.user?.login || 'me') : 'orgs'}-${state.from}_${state.to}.md`;
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------- render: header bar -------------------------- */
+function renderBar() {
+  const r = $('#barRight');
+  r.innerHTML = '';
+  if (!state.user) {
+    r.append(el('span', {}, 'unsigned'));
     return;
   }
-  console_.append(renderToolbar());
+  r.append(
+    el('span', { class: 'bar-user' },
+      state.user.avatar_url ? el('img', { class: 'avatar', src: state.user.avatar_url, alt: '' }) : null,
+      `@${state.user.login}`
+    ),
+    el('button', {
+      class: 'btn btn--ghost btn--sm',
+      onclick: () => fetchAllPRs(),
+      disabled: state.loading,
+    }, state.loading ? 'Refreshing…' : 'Refresh'),
+    el('button', {
+      class: 'btn btn--ghost btn--sm',
+      onclick: exportMarkdown,
+      disabled: !state.prs.length,
+      title: 'Download visible PRs as Markdown',
+    }, 'Export .md'),
+    el('button', { class: 'btn btn--ghost btn--sm', onclick: signOut }, 'Sign out'),
+  );
+
+  const rl = state.rateLimit;
+  $('#footRate').textContent = rl ? `Rate · ${rl.remaining}/${rl.limit}` : '—';
+}
+
+/* ---------- render: console ----------------------------- */
+function renderConsole() {
+  const c = $('#console');
+  c.innerHTML = '';
+  if (!state.pat) { c.append(renderGate()); return; }
+  c.append(renderToolbar());
 }
 
 function renderGate() {
   let value = '';
   const input = el('input', {
     type: 'password',
-    placeholder: 'ghp_•••••••••••••••••••••••••••••••••••••',
+    placeholder: 'ghp_•••••••••••••••••••••••',
     autocomplete: 'off',
     spellcheck: 'false',
     'aria-label': 'GitHub personal access token',
     oninput: (e) => { value = e.target.value.trim(); },
     onkeydown: (e) => { if (e.key === 'Enter') submit(); },
   });
-
   const submit = async () => {
     if (!value) return;
     state.pat = value;
     persist();
     try {
       await fetchUserAndOrgs();
-      // pre-select all orgs first time
       if (!state.selectedOrgs.length) state.selectedOrgs = state.orgs.map((o) => o.login);
       persist();
       await fetchAllPRs();
     } catch (e) {
       state.error = `Token rejected — ${e.message}`;
-      state.pat = '';
-      localStorage.removeItem(STORE.pat);
+      state.pat = ''; localStorage.removeItem(STORE.pat);
       render();
     }
   };
-
   return el('div', { class: 'gate' },
-    el('div', {},
-      el('div', { class: 'gate-head' }, 'Credentials'),
-      el('h2', {}, 'Provide a token, the rest is automatic.'),
-      el('p', {},
-        'Dispatch is a single HTML page. Paste a GitHub fine-grained or classic personal access token and it queries the GitHub REST API directly from this tab.'
-      ),
-      el('ol', {},
-        el('li', {},
-          'Open ',
-          el('a', { class: 'link', href: 'https://github.com/settings/tokens', target: '_blank', rel: 'noopener' },
-            'github.com/settings/tokens'),
-          '.'
-        ),
-        el('li', {}, 'Generate a token. Scopes: ', el('code', {}, 'repo'), ' and ', el('code', {}, 'read:org'), '.'),
-        el('li', {}, 'Paste it on the right. It stays in ', el('code', {}, 'localStorage'), ' — never sent anywhere else.'),
-      ),
+    el('h2', {}, 'Paste a GitHub token.'),
+    el('p', { class: 'gate-help' },
+      'Stays in this tab — never sent anywhere except ',
+      el('code', {}, 'api.github.com'), '. Create one at ',
+      el('a', { href: 'https://github.com/settings/tokens', target: '_blank', rel: 'noopener' }, 'github.com/settings/tokens'),
+      ' with scopes ', el('code', {}, 'repo'), ' and ', el('code', {}, 'read:org'), '.'
     ),
-    el('div', { class: 'gate-form' },
-      el('div', { class: 'field' },
-        el('label', { for: 'pat-input' }, 'Personal Access Token'),
-        Object.assign(input, { id: 'pat-input' }),
-      ),
-      el('div', { class: 'gate-actions' },
-        el('button', { class: 'btn btn--accent', onclick: submit }, 'File the credential ↗'),
-        el('span', { style: 'font-family:var(--mono);font-size:11px;color:var(--ink-mute);letter-spacing:.12em;text-transform:uppercase;' },
-          '⏎ to submit'
-        ),
-      ),
-      state.error
-        ? el('div', { style: 'font-family:var(--mono);font-size:11px;color:var(--accent-deep);margin-top:6px;' }, state.error)
-        : null
-    )
+    el('div', { class: 'field' },
+      el('label', { for: 'pat-input' }, 'Personal access token'),
+      Object.assign(input, { id: 'pat-input' }),
+    ),
+    el('button', { class: 'btn btn--accent', onclick: submit }, 'Continue'),
+    state.error ? el('div', { class: 'gate-err' }, state.error) : null
   );
 }
 
 function renderToolbar() {
-  const root = el('div', { class: 'toolbar' });
+  const t = el('div', { class: 'toolbar' });
 
-  /* left: filters */
-  const left = el('div', { style: 'display:grid;gap:14px;min-width:0;' });
-
-  // orgs row
+  /* row 1: orgs */
   const orgsRow = el('div', { class: 'toolbar-row' },
     el('span', { class: 'toolbar-label' }, 'Orgs'),
   );
   state.orgs.forEach((o) => {
-    const selected = state.selectedOrgs.includes(o.login);
+    const sel = state.selectedOrgs.includes(o.login);
     orgsRow.append(
       el('button', {
-        class: 'chip chip-org chip--accent',
-        'aria-pressed': String(selected),
+        class: 'chip chip-org',
+        'aria-pressed': String(sel),
         onclick: () => {
-          if (selected) state.selectedOrgs = state.selectedOrgs.filter((x) => x !== o.login);
-          else state.selectedOrgs = [...state.selectedOrgs, o.login];
+          state.selectedOrgs = sel
+            ? state.selectedOrgs.filter((x) => x !== o.login)
+            : [...state.selectedOrgs, o.login];
           persist(); fetchAllPRs();
         },
       },
@@ -307,23 +350,41 @@ function renderToolbar() {
       )
     );
   });
-  left.append(orgsRow);
+  if (!state.orgs.length) {
+    orgsRow.append(el('span', { style: 'font-family:var(--mono);font-size:11px;color:var(--ink-mute);' },
+      'No organisations on this account.'));
+  }
+  t.append(orgsRow);
 
-  // range row
-  const rangeRow = el('div', { class: 'toolbar-row' },
+  /* row 2: date range */
+  const activePreset = presetActiveId();
+  const dateRow = el('div', { class: 'toolbar-row' },
     el('span', { class: 'toolbar-label' }, 'Window'),
-    ...RANGES.map((r) =>
+    el('span', { class: 'date-pick' },
+      el('input', {
+        type: 'date', value: state.from, max: state.to || todayISO(),
+        'aria-label': 'From',
+        onchange: (e) => { state.from = e.target.value; persist(); fetchAllPRs(); },
+      }),
+      el('span', { class: 'date-sep' }, '→'),
+      el('input', {
+        type: 'date', value: state.to, min: state.from, max: todayISO(),
+        'aria-label': 'To',
+        onchange: (e) => { state.to = e.target.value; persist(); fetchAllPRs(); },
+      }),
+    ),
+    ...PRESETS.map((p) =>
       el('button', {
         class: 'chip',
-        'aria-pressed': String(state.range === r.id),
-        onclick: () => { state.range = r.id; persist(); fetchAllPRs(); },
-      }, r.label)
+        'aria-pressed': String(activePreset === p.id),
+        onclick: () => applyPreset(p.id),
+      }, p.label)
     )
   );
-  left.append(rangeRow);
+  t.append(dateRow);
 
-  // status row
-  const statusRow = el('div', { class: 'toolbar-row' },
+  /* row 3: state + scope */
+  const stateRow = el('div', { class: 'toolbar-row' },
     el('span', { class: 'toolbar-label' }, 'State'),
     ...STATUSES.map((s) =>
       el('button', {
@@ -332,139 +393,85 @@ function renderToolbar() {
         onclick: () => { state.status = s.id; persist(); fetchAllPRs(); },
       }, s.label)
     ),
-    el('span', { class: 'toolbar-label', style: 'margin-left:14px;' }, 'Group'),
-    el('button', {
-      class: 'chip',
-      'aria-pressed': String(state.groupBy === 'org'),
-      onclick: () => { state.groupBy = 'org'; persist(); render(); }
-    }, 'By org'),
-    el('button', {
-      class: 'chip',
-      'aria-pressed': String(state.groupBy === 'repo'),
-      onclick: () => { state.groupBy = 'repo'; persist(); render(); }
-    }, 'By repo'),
-    el('button', {
-      class: 'chip',
-      'aria-pressed': String(state.groupBy === 'none'),
-      onclick: () => { state.groupBy = 'none'; persist(); render(); }
-    }, 'Flat')
+    el('span', { class: 'toolbar-label', style: 'margin-left:14px;' }, 'Scope'),
+    ...SCOPES.map((s) =>
+      el('button', {
+        class: 'chip',
+        'aria-pressed': String(state.scope === s.id),
+        onclick: () => { state.scope = s.id; persist(); fetchAllPRs(); },
+      }, s.label)
+    ),
   );
-  left.append(statusRow);
+  t.append(stateRow);
 
-  root.append(left);
-
-  /* right: user + refresh + sign out */
-  const right = el('div', { class: 'toolbar-actions' });
-  if (state.user) {
-    right.append(
-      el('span', { class: 'toolbar-user' },
-        state.user.avatar_url ? el('img', { src: state.user.avatar_url, alt: '' }) : null,
-        `@${state.user.login}`,
-      )
-    );
-  }
-  right.append(
-    el('button', {
-      class: 'btn btn--ghost',
-      onclick: () => fetchAllPRs(),
-      disabled: state.loading,
-    }, state.loading ? 'Refreshing…' : 'Refresh ↻'),
-    el('button', {
-      class: 'btn btn--ghost',
-      onclick: signOut,
-      title: 'Clear token from this browser',
-    }, 'Sign out'),
-  );
-  root.append(right);
-
-  return root;
+  return t;
 }
 
-/* ---------- rendering: report --------------------------- */
+/* ---------- render: report ------------------------------ */
 function renderReport() {
   const root = $('#report');
   root.innerHTML = '';
-
   if (!state.pat) return;
 
   if (state.error) {
-    root.append(
-      el('div', { class: 'notice notice--error' },
-        el('h3', {}, 'Could not fetch dispatches'),
-        el('p', {}, state.error),
-      )
-    );
+    root.append(el('div', { class: 'notice notice--error' },
+      el('h3', {}, 'Could not fetch'),
+      el('p', {}, state.error),
+    ));
     return;
   }
 
   if (state.loading && !state.prs.length) {
-    root.append(
-      el('div', { class: 'loading' },
-        'Compiling the wire',
-        el('span', { class: 'loading-bar', 'aria-hidden': 'true' }),
-        state.selectedOrgs.length ? `${state.selectedOrgs.length} org(s)` : 'all orgs',
-      )
-    );
+    root.append(el('div', { class: 'loading' },
+      'Compiling the wire',
+      el('span', { class: 'loading-bar', 'aria-hidden': 'true' }),
+    ));
     return;
   }
 
-  // head
-  const range = RANGES.find((r) => r.id === state.range)?.label ?? state.range;
-  const statusLabel = STATUSES.find((s) => s.id === state.status)?.label ?? state.status;
-  root.append(
-    el('div', { class: 'report-head' },
-      el('h2', {},
-        statusLabel === 'All' ? 'The ' : statusLabel + ' ',
-        el('em', {}, 'pull requests'),
-        ' of the past ', range, '.'
-      ),
-      el('div', { class: 'report-meta' },
-        el('strong', {}, String(state.prs.length)), ' filed',
-        ' · ',
-        el('strong', {}, state.selectedOrgs.length || state.orgs.length), ' org(s)',
-        state.lastFetch ? el('div', {}, 'as of ', el('strong', {}, state.lastFetch.toLocaleTimeString())) : ''
-      )
+  const scopeLabel = state.scope === 'mine' ? 'your' : 'all';
+  const stLabel = STATUSES.find((s) => s.id === state.status)?.label.toLowerCase() ?? state.status;
+
+  root.append(el('div', { class: 'report-head' },
+    el('h2', {},
+      stLabel === 'all' ? '' : `${stLabel[0].toUpperCase() + stLabel.slice(1)} `,
+      el('em', {}, scopeLabel === 'your' ? 'your pull requests' : 'pull requests'),
+      ` · ${state.from} → ${state.to}.`
     ),
-    el('div', { class: 'report-rule' })
-  );
+    el('div', { class: 'report-meta' },
+      el('strong', {}, String(state.prs.length)), ' filed',
+      ' · ',
+      el('strong', {}, String(state.selectedOrgs.length || state.orgs.length)), ' org',
+      (state.selectedOrgs.length || state.orgs.length) === 1 ? '' : 's',
+      state.lastFetch ? ` · ${state.lastFetch.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '',
+    )
+  ));
 
   if (!state.prs.length) {
-    root.append(
-      el('div', { class: 'notice' },
-        el('h3', {}, 'The wire is quiet.'),
-        el('p', {},
-          'No pull requests match this window. Widen the time range, switch to ',
-          el('em', {}, 'All'),
-          ', or add another organisation to the selection above.')
-      )
-    );
+    root.append(el('div', { class: 'notice' },
+      el('h3', {}, 'The wire is quiet.'),
+      el('p', {}, 'Widen the date range, switch state to ', el('em', {}, 'All'), ', or select another org.')
+    ));
     return;
   }
 
-  if (state.groupBy === 'none') {
-    root.append(renderPrList(state.prs));
-    return;
-  }
-
-  // group by org / repo
+  // group by org
   const groups = new Map();
   for (const pr of state.prs) {
-    const key = state.groupBy === 'org' ? pr.org : pr.repo;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(pr);
+    if (!groups.has(pr.org)) groups.set(pr.org, []);
+    groups.get(pr.org).push(pr);
   }
   const sortedKeys = [...groups.keys()].sort((a, b) => groups.get(b).length - groups.get(a).length);
   for (const key of sortedKeys) {
     const items = groups.get(key);
-    const section = el('section', { class: 'org-section' },
+    root.append(el('section', { class: 'org-section' },
       el('div', { class: 'org-section-head' },
         el('span', { class: 'org-section-name' }, key),
         el('span', { class: 'org-section-line' }),
-        el('span', { class: 'org-section-count' }, `${items.length} open thread${items.length === 1 ? '' : 's'}`)
+        el('span', { class: 'org-section-count' }, `${items.length}`)
       ),
       renderPrList(items)
-    );
-    root.append(section);
+    ));
   }
 }
 
@@ -478,23 +485,18 @@ function renderPr(pr, i) {
   const pillClass =
     pr.merged ? 'pill pill--merged' :
     pr.closed ? 'pill pill--closed' :
-    pr.draft  ? 'pill pill--draft'  :
-                'pill pill--open';
+    pr.draft  ? 'pill pill--draft'  : 'pill pill--open';
   const pillText =
-    pr.merged ? 'Merged' :
-    pr.closed ? 'Closed' :
-    pr.draft  ? 'Draft'  :
-                'Open';
+    pr.merged ? 'Merged' : pr.closed ? 'Closed' : pr.draft ? 'Draft' : 'Open';
 
-  const labels = (pr.labels || []).slice(0, 4).map((l) =>
+  const labels = (pr.labels || []).slice(0, 3).map((l) =>
     el('span', {
       class: 'pr-label',
-      style: l.color ? `border-color: #${l.color}66; color: #${darken(l.color)};` : '',
+      style: l.color ? `border-color: #${l.color}55; color: #${darken(l.color)};` : '',
     }, l.name)
   );
 
   return el('li', { class: 'pr', style: `--i:${i};` },
-    el('span', { class: 'pr-num' }, String(i + 1).padStart(2, '0')),
     el('span', { class: pillClass }, pillText),
     el('div', { class: 'pr-main' },
       el('a', { href: pr.url, target: '_blank', rel: 'noopener', class: 'pr-title' },
@@ -508,18 +510,16 @@ function renderPr(pr, i) {
           `@${pr.author?.login ?? 'unknown'}`
         ),
         pr.comments ? el('span', { class: 'sep' }, `${pr.comments} comment${pr.comments === 1 ? '' : 's'}`) : null,
-        labels.length ? el('span', { class: 'labels sep' }, ...labels) : null,
+        labels.length ? el('span', { class: 'sep' }, ...labels) : null,
       )
     ),
     el('div', { class: 'pr-meta' },
       el('div', { class: 'age', title: new Date(pr.updatedAt).toLocaleString() }, fmtAge(pr.updatedAt)),
-      el('div', {}, 'updated'),
-    ),
+    )
   );
 }
 
 function darken(hex) {
-  // gh label colors are short hex; mute them for editorial look
   if (!hex || hex.length < 6) return '555';
   const r = parseInt(hex.slice(0, 2), 16);
   const g = parseInt(hex.slice(2, 4), 16);
@@ -530,14 +530,13 @@ function darken(hex) {
 
 /* ---------- master render ------------------------------- */
 function render() {
-  renderMasthead();
+  renderBar();
   renderConsole();
   renderReport();
 }
 
 /* ---------- boot ---------------------------------------- */
 (async function boot() {
-  bumpIssue();
   render();
   if (state.pat) {
     try {
@@ -548,8 +547,7 @@ function render() {
       await fetchAllPRs();
     } catch (e) {
       state.error = `Stored token failed — ${e.message}. Sign in again.`;
-      state.pat = '';
-      localStorage.removeItem(STORE.pat);
+      state.pat = ''; localStorage.removeItem(STORE.pat);
       render();
     }
   }
