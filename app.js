@@ -199,6 +199,14 @@ function applyPreset(id) {
   persist(); fetchAllPRs();
 }
 
+function commitDates(from, to) {
+  const valid = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+  if (!valid(from) || !valid(to)) return; // ignore partial / cleared input
+  if (from > to) [from, to] = [to, from];
+  state.from = from; state.to = to;
+  persist(); fetchAllPRs();
+}
+
 /* ---------- export ------------------------------------- */
 function exportMarkdown() {
   const fmt = (d) => d ? new Date(d).toISOString().slice(0, 10) : '';
@@ -362,15 +370,15 @@ function renderToolbar() {
     el('span', { class: 'toolbar-label' }, 'Window'),
     el('span', { class: 'date-pick' },
       el('input', {
-        type: 'date', value: state.from, max: state.to || todayISO(),
+        type: 'date', value: state.from,
         'aria-label': 'From',
-        onchange: (e) => { state.from = e.target.value; persist(); fetchAllPRs(); },
+        onchange: (e) => commitDates(e.target.value, state.to),
       }),
       el('span', { class: 'date-sep' }, '→'),
       el('input', {
-        type: 'date', value: state.to, min: state.from, max: todayISO(),
+        type: 'date', value: state.to,
         'aria-label': 'To',
-        onchange: (e) => { state.to = e.target.value; persist(); fetchAllPRs(); },
+        onchange: (e) => commitDates(state.from, e.target.value),
       }),
     ),
     ...PRESETS.map((p) =>
