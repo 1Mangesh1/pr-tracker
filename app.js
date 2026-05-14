@@ -126,8 +126,19 @@ function buildQuery(org) {
 
 async function fetchPRsForOrg(org) {
   const q = buildQuery(org);
-  const data = await gh(`/search/issues?q=${encodeURIComponent(q)}&sort=updated&order=desc&per_page=100`);
-  return (data.items || []).map((i) => ({
+  const collected = [];
+  let totalCount = 0;
+  for (let page = 1; page <= 10; page++) {
+    const data = await gh(
+      `/search/issues?q=${encodeURIComponent(q)}&sort=updated&order=desc&per_page=100&page=${page}`
+    );
+    totalCount = data.total_count ?? totalCount;
+    const items = data.items || [];
+    collected.push(...items);
+    if (items.length < 100) break;
+  }
+  if (totalCount > collected.length) state.capped = true;
+  return collected.map((i) => ({
     org,
     id: i.id,
     number: i.number,
@@ -148,7 +159,7 @@ async function fetchPRsForOrg(org) {
 }
 
 async function fetchAllPRs() {
-  state.loading = true; state.error = null; render();
+  state.loading = true; state.error = null; state.capped = false; render();
   try {
     const targets = state.selectedOrgs.length ? state.selectedOrgs : state.orgs.map((o) => o.login);
     if (!targets.length) { state.prs = []; return; }
@@ -448,6 +459,7 @@ function renderReport() {
     ),
     el('div', { class: 'report-meta' },
       el('strong', {}, String(state.prs.length)), ' filed',
+      state.capped ? ' (search cap · 1000 max per org)' : '',
       ' · ',
       el('strong', {}, String(state.selectedOrgs.length || state.orgs.length)), ' org',
       (state.selectedOrgs.length || state.orgs.length) === 1 ? '' : 's',
